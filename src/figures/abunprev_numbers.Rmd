@@ -1,0 +1,79 @@
+---
+title: "Some abundant numbers"
+author: "Adrià Auladell"
+date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
+knit: (function(inputFile, encoding) { 
+      out_dir <- 'results/tests/';
+      rmarkdown::render(inputFile,
+                        encoding=encoding, 
+                        output_file=file.path(here::here(),
+                        out_dir, 'abunprev_numbs.html')) })
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+---
+
+# Packages 
+```{r}
+library(tidyverse)
+library(speedyseq)
+library(here)
+```
+
+
+```{r}
+source(here("src/util/backbone_functions.R") )
+source(here("src/util/backbone_params-graphs.R") )
+source(here("src/util/main_functions.R"))
+source(here("src/util/timeseries_functions.R"))
+
+```
+
+
+# Data import
+```{r}
+bl.phy <- readRDS(here('data/cleaned/blphyloseq.rds') )
+bl.phy.filt <- readRDS(here('data/cleaned/blphy_filt_7sams.rds') )
+abunprev <- readRDS(here('data/analysis/abund_prev.rds'))
+
+tax <- as(tax_table(bl.phy.filt), 'matrix') %>% as_tibble(rownames = 'asv')
+```
+# Distribution of behaviours 
+
+```{r}
+
+abprevsea <- abunprev %>% 
+  select(asv, behavior, presence) %>%
+  left_join(tax, by = 'asv')
+  
+
+abprevsea %>% 
+  select(behavior, presence)  %>% 
+  table()
+
+
+abprevsea %>% filter(behavior == 'Broad')  %>% gt::gt()
+
+
+abprevsea %>% filter(behavior == 'Broad') %>% filter(class %in% 'Alphaproteobacteria')
+
+
+```
+
+
+```{r}
+
+abprevsea %>% filter(behavior == 'Broad') %>% pull(class) %>% table()
+
+abprevsea %>% filter(behavior == 'Other')  %>% pull(class) %>% 
+    table() 
+
+
+abprevsea %>% filter(behavior == 'Other', class == 'Bacteroidia')  %>%
+  pull(order) %>% 
+  table() 
+
+abprevsea %>% filter(behavior == 'Narrow') %>% pull(class) %>% table() 
+```
+

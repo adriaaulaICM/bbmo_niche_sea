@@ -1,0 +1,146 @@
+---
+title: "Alpha diversity"
+author: "Adrià Auladell"
+date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
+knit: (function(inputFile, encoding) { 
+      out_dir <- 'results/tests/';
+      rmarkdown::render(inputFile,
+                        encoding=encoding, 
+                        output_file=file.path(here::here(),
+                        out_dir, 'alpha_diversity.html')) })
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+---
+
+# Packages 
+
+
+```{r}
+library(tidyverse)
+library(speedyseq)
+library(breakaway)
+library(here)
+```
+
+# Sources 
+
+```{r}
+source(here('src/util/params-graphs.R'))
+```
+
+
+```{r}
+
+bl.phy <- readRDS(here('data/cleaned/blphyloseq.rds') )
+
+rich.df <- readRDS(here('data/analysis/richness_break_all.rds'))
+
+bt <- read_tsv(here('results/tests/alphadiv_betta_months.tsv'))
+bt.sea <- read_tsv(here('results/tests/alphadiv_betta_sea.tsv'))
+
+```
+
+# Visualization 
+
+```{r}
+plot_richestim <- function(rich.df, betta.obj){
+  estimate.month <- betta.obj %>% 
+    mutate( value = Estimates + betta.obj[[1,2]]) %>% 
+    mutate( value = ifelse(predictor == '(Intercept)', Estimates, value))  %>% 
+    mutate( month = str_replace(predictor, "predictors", "") %>%
+              str_replace("\\(Intercept\\)", "01"))
+  
+  
+  
+  ggplot(rich.df, aes(month, estimate)) + 
+    geom_boxplot(aes(fill = season),
+                 show.legend = F, fatten = 1,
+                 alpha = 0.7,
+                 outlier.colour = 'transparent') + 
+    geom_linerange( aes(ymin = estimate - error,
+                        ymax = estimate + error),
+                    position = position_jitter(seed =100 , width = 0.1)) + 
+    geom_point( aes(fill = season),
+                shape = 21,
+                position = position_jitter(seed = 100, width = 0.1)) + 
+    geom_linerange(data=estimate.month,
+                   aes( x = month,
+                        ymin = value - `Standard Errors`,
+                        ymax = value + `Standard Errors`),
+                   inherit.aes = F) + 
+    geom_point(data = estimate.month,
+               aes( x = month, y = value),
+                fill = 'indianred1',
+                shape = 23) + 
+    sea.fillScale + 
+    ylab('Richness estimate') + 
+    scale_x_month
+  
+  
+}
+
+```
+
+```{r}
+
+plot_richestim(rich.df, bt)
+
+ggsave(here('results/figures/alphadiv_month.pdf'), width = 8, height = 5)
+    
+```
+    
+    
+# Some comparsions
+
+For this script i want to calculate the rate of changes between the diferent seasons and have a clear picture of it.  
+
+```{r}
+
+bt.sea[2:3,"Estimates"] %>% 
+  pull() %>% 
+  mean()
+
+bt
+```
+
+# Shannon 
+
+```{r}
+
+div.df <- readRDS(here('data/analysis/divnet_genus.rds'))
+```
+
+
+```{r}
+
+estimates <- div.df$shannon %>% summary %>% pull(estimate)
+ses <- sqrt(div.df$`shannon-variance`)
+X <- breakaway::make_design_matrix(bl.phy, "month")
+
+bt.shannon <- betta(estimates, ses, X)$table
+
+bt.shannon
+plot_richestim(data.frame(summary(div.df$shannon),
+                          sample_data(bl.phy)),
+               as_tibble(bt.shannon, rownames = 'predictor'))
+               
+```
+
+
+# Simpson 
+
+```{r}
+
+estimates <- div.df$simpson %>% summary %>% pull(estimate)
+ses <- sqrt(div.df$`simpson-variance`)
+X <- breakaway::make_design_matrix(bl.phy, "month")
+
+bt.simpson <- betta(estimates, ses, X)$table
+  
+bt.simpson
+plot_richestim(data.frame(summary(div.df$simpson),
+                          sample_data(bl.phy)),
+               as_tibble(bt.simpson, rownames = 'predictor'))
+```

@@ -1,0 +1,475 @@
+---
+title: "Time series numbers"
+author: "Adrià Auladell"
+date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
+knit: (function(inputFile, encoding) { 
+      out_dir <- 'results/tests/';
+      rmarkdown::render(inputFile,
+                        encoding=encoding, 
+                        output_file=file.path(here::here(),
+                        out_dir, 'seasonality.html')) })
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+---
+
+# Packages 
+```{r}
+knitr::opts_chunk$set(fig.width = 12, fig.height = 9)
+```
+
+```{r}
+library(tidyverse)
+library(speedyseq)
+library(here)
+```
+
+```{r}
+source(here("src/util/backbone_functions.R") )
+source(here("src/util/backbone_params-graphs.R") )
+source(here("src/util/main_functions.R"))
+source(here("src/util/timeseries_functions.R"))
+
+```
+
+
+# Data import
+```{r}
+bl.phy <- readRDS(here('data/cleaned/blphyloseq.rds') )
+bl.phy.filt <- readRDS(here('data/cleaned/blphy_filt_7sams.rds') )
+lombsea <- readRDS(here('data/analysis/lombsea.rds'))
+abunprev <- readRDS(here('data/analysis/abund_prev.rds'))
+
+tax <- as(tax_table(bl.phy.filt), 'matrix') %>% as_tibble(rownames = 'asv')
+```
+
+```{r}
+  
+geoMean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+
+bl.phy.clr <- bl.phy %>% 
+  transform_sample_counts(., function(x) x+1) %>%
+  transform_sample_counts(function(x) log(x/geoMean(x)))
+```
+
+# Distribution of behaviours 
+
+```{r}
+abprevtax <- abunprev %>% 
+  left_join(tax, by = 'asv') %>% 
+  mutate(seasonal = ifelse(asv %in% lombsea$asv, TRUE, FALSE)) 
+  
+abprevsea <- abprevtax %>% 
+  filter(asv %in% lombsea$asv) %>% 
+  select(asv, behavior, presence)
+  
+
+abprevsea %>% 
+  select(behavior, presence) %>% 
+  table()
+
+abprevsea %>% filter(behavior == 'Broad') 
+abunprev %>% filter(behavior == 'Broad') %>% 
+  left_join(tax, by = 'asv')
+
+
+abprevtax %>% filter(behavior == 'Narrow') %>% pull(class) %>% table()
+```
+# Plotting specific winter 
+
+```{r}
+
+# bl.phy.asinh <- transform_sample_counts(bl.phy.filt, function(x) asinh(x))
+
+
+num.days.mnt <- c(0,31,28,31,30,31,30,31,31,30,31,30)
+cumnum <- cumsum(num.days.mnt)
+
+sea.asvs <- psmelt(bl.phy.clr) %>% 
+  filter(OTU %in% c('asv122', 'asv55', 'asv131')) %>% 
+  ggplot(aes(day_of_year, Abundance)) + 
+  geom_jitter(aes(color = OTU), alpha = 0.6, show.legend = F) + 
+  stat_smooth(aes(x = day_of_year,
+                  group = OTU,
+                  color = OTU), # continuous x-axis
+              method = "gam",
+              formula = y ~ s(x, k =12, bs = 'cc'),
+              se = F, size = 2, show.legend = F) + 
+  facet_wrap(~str_c(class, ', ', str_to_upper(OTU))) + 
+  lil.strip + 
+  ylab('Centered log ratio (log10( ASV read count / geoMean))') + 
+  scale_x_continuous(breaks = cumnum,
+                     name = 'Month',
+                     labels = str_to_title(month.order)) +
+  scale_color_solarized(name = 'ASV')
+
+ggsave(filename = here('results/figures/timeseries/verymuch_seasonal_asvsclr.pdf'),
+       plot = sea.asvs, 
+       width = 11, 
+       height = 5)
+
+
+this <- psmelt(bl.phy.clr) %>% 
+  filter(OTU %in% c('asv122', 'asv55', 'asv131'))
+
+
+this %>% select(OTU, phylum, class, seq) %>% distinct()
+
+this %>% pull(seq) %>% as.character() %>%  unique()
+```
+
+# Comparsion trends ASVs
+```{r}
+vals <- abprevtax %>% 
+  pull(genus) %>% 
+  table() %>% sort() 
+
+vals 
+
+
+```
+How do they compare, Pelagibacter and HIMB59 ASVs
+```{r}
+
+genera <- vals %>% 
+           names() %>% tail( n =6)
+
+asvs <- abprevtax %>% 
+  filter(genus %in% c(genera, 'Synechococcus_C', 'UBA7446')) %>% 
+  pull(asv)
+
+psm.asinh <-  psmelt(transform_sample_counts(bl.phy.filt, function(x) asinh(x)))
+
+
+psm.asinh %>% 
+  filter(OTU %in% asvs) %>% 
+  ggplot(aes(month, Abundance)) + 
+  geom_jitter(alpha = 0.6) + 
+  stat_smooth(aes(x = month,
+                  group = OTU,
+                  color = family),
+              method = "gam",
+              formula = y ~ s(x, k =12, bs = 'cc'),
+              se = F, size = 2,
+              show.legend = F, alpha = 0.7) + 
+  facet_wrap(~genus)
+```
+
+```{r}
+pelagsvs <- abprevtax %>% 
+  filter(order %in% c('Pelagibacterales', 'HIMB59')) %>% 
+  pull(asv)
+
+noseacladeII <- tax %>% 
+  filter(genus == 'Pelagibacter_A') %>% 
+  pull(asv)
+
+psm.asinh %>% 
+  filter(OTU %in% c(pelagsvs, noseacladeII)) %>% 
+  ggplot(aes(month, Abundance)) + 
+  geom_jitter(alpha = 0.6) + 
+  stat_smooth(aes(x = month,
+                  group = OTU,
+                  color = genus),
+              method = "gam",
+              formula = y ~ s(x, k =12, bs = 'cc'),
+              se = F, size = 2,
+              show.legend = F, alpha = 0.7) + 
+  facet_wrap(~genus)
+
+
+pelagoverview <- tax %>% 
+  filter(genus %in% c('Pelagibacter', 'Pelagibacter_A', 'AG-337-102',
+                      'HIMB59', 'HIMB114')| order %in% 'HIMB59' ) %>% 
+  pull(asv)
+
+psm.asinh %>% 
+  filter(OTU %in% pelagoverview) %>% 
+  mutate(seasonal = ifelse(OTU %in% lombsea$asv, TRUE, FALSE)) %>% 
+  ggplot(aes(month, Abundance)) + 
+  geom_jitter(alpha = 0.6) + 
+  stat_smooth(aes(x = month,
+                  group = OTU,
+                  color = genus),
+              method = "gam",
+              formula = y ~ s(x, k =12, bs = 'cc'),
+              se = F, size = 2,
+              show.legend = F, alpha = 0.7) + 
+  facet_wrap(~genus + seasonal)
+
+```
+
+Let's see Cyanobac and Flavobacteria 
+
+```{r}
+
+cyanoflavo <- tax %>% 
+  filter(family %in% c('Cyanobiaceae' )) %>% 
+  pull(asv)
+
+psm.asinh %>% 
+  filter(OTU %in% cyanoflavo) %>% 
+  mutate(seasonal = ifelse(OTU %in% lombsea$asv, TRUE, FALSE)) %>% 
+  ggplot(aes(month, Abundance)) + 
+  geom_jitter(alpha = 0.6) + 
+  stat_smooth(aes(x = month,
+                  group = OTU,
+                  color = genus),
+              method = "gam",
+              formula = y ~ s(x, k =12, bs = 'cc'),
+              se = F, size = 2,
+              show.legend = F, alpha = 0.7) + 
+  facet_wrap(~genus + seasonal)
+
+# only flavo
+
+cyanoflavo <- tax %>% 
+  filter(family %in% c('Flavobacteriaceae')) %>% 
+  pull(asv)
+
+psm.asinh %>% 
+  filter(OTU %in% cyanoflavo) %>% 
+  mutate(seasonal = ifelse(OTU %in% lombsea$asv, TRUE, FALSE)) %>% 
+  ggplot(aes(month, Abundance)) + 
+  geom_jitter(alpha = 0.6) + 
+  stat_smooth(aes(x = month,
+                  group = OTU,
+                  color = genus),
+              method = "gam",
+              formula = y ~ s(x, k =12, bs = 'cc'),
+              se = F, size = 2,
+              show.legend = F, alpha = 0.7) + 
+  facet_wrap(~genus + seasonal)
+
+```
+
+What about SAR86
+
+```{r}
+otus.decipher <- readRDS(here('data/analysis/bbmo_otus_decipher.rds')) 
+
+otu99 <- data.frame( OTU = otus.decipher$asv,
+                     otu99 = pull(otus.decipher, cluster99) )
+
+
+plot_clusters_asvs <- function(selasvs){
+  
+  psm.asinh %>% 
+    filter(OTU %in% selasvs) %>% 
+    left_join(otu99, by = 'OTU') %>% 
+    mutate(seasonal = ifelse(OTU %in% lombsea$asv, TRUE, FALSE)) %>% 
+    mutate(labol = ifelse(month == '12' & year == 2013, OTU, NA_character_)) %>% 
+    ggplot(aes(month, Abundance)) + 
+    stat_smooth(aes(x = month,
+                    group = OTU,
+                    color = as.character(seasonal)),
+                method = "gam",
+                formula = y ~ s(x, k =12, bs = 'cc'),
+                se = F, size = 1,
+                show.legend = F) + 
+    ggrepel::geom_label_repel(aes(label = labol,
+                                  color = as.character(seasonal)),
+                              size = 2, na.rm = T)+ 
+    scale_color_manual(values = c('black', 'red'), name = 'Seasonal') +
+    lil.strip + 
+    leg.bottom + 
+    scale_x_month + 
+    facet_wrap(~cluster)
+  
+}
+
+
+```
+
+```{r}
+
+sar86asvs <- tax %>% 
+  filter(genus %in% c('SAR86A')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(sar86asvs)
+```
+
+
+```{r}
+
+rhodobacasvs <- tax %>% 
+  filter(family %in% c('Rhodobacteraceae')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(rhodobacasvs)
+
+```
+
+```{r}
+d472 <- tax %>% 
+  filter(family %in% c('D2472')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(d472)
+
+```
+```{r}
+
+puni <- tax %>% 
+  filter(order %in% c('Puniceispirillales')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(puni)
+```
+
+```{r}
+himbi <- tax %>% 
+  filter(order %in% c('HIMB59')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(himbi)
+```
+
+
+```{r}
+
+flav <- tax %>% 
+  filter(family %in% c('Flavobacteriaceae')) %>% 
+  pull(asv)
+
+
+plot_clusters_asvs(flav)
+```
+
+```{r}
+pelaasvs <- tax %>% 
+  filter(genus %in% c('Pelagibacter')) %>% 
+  pull(asv)
+
+
+plot_clusters_asvs(pelaasvs)
+```
+
+
+```{r}
+aegeanasvs <- tax %>% 
+  filter(genus %in% c('AG-337-I02')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(aegeanasvs)
+```
+
+```{r}
+
+lumiasvs <- tax %>% 
+  filter(genus %in% c('Luminiphilus')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(lumiasvs)
+```
+```{r}
+
+pelagiaaasvs <- tax %>% 
+  filter(genus %in% c('Pelagibacter_A')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(pelagiaaasvs)
+```
+
+```{r}
+syneasvs <- tax %>% 
+  filter(genus %in% c('Synechococcus_C')) %>% 
+  pull(asv)
+
+plot_clusters_asvs(syneasvs)
+
+
+```
+
+# Contribution to total relative abundance 
+
+```{r}
+
+lomb.02 <- readRDS(here('data/analysis/lomball.rds'))
+
+# seeing how does this change with these values 
+lomb.sea <- tibble( asv = names(lomb.02),
+                    pval = map_dbl(lomb.02, ~.x$p.value),
+                    peak = map_dbl(lomb.02, ~.x$peak),
+                    interval  = map(lomb.02, ~.x$peak.at),
+                    int.min = map_dbl(interval, ~.[[2]]),
+                    int.max = map_dbl(interval, ~.[[1]])) %>% 
+  mutate( qval = fdrtool::fdrtool(pval, statistic = 'pvalue')$qval) %>% 
+  filter(qval <= 0.01, peak >= 10, int.max <= 2)
+
+
+season.relab <- taxa_sums(bl.phy)[lombsea$asv] %>% sum()
+total.relab <- taxa_sums(bl.phy) %>% sum()
+total.tested.relab <- taxa_sums(bl.phy.filt) %>% sum()
+
+season.relab * 100 / total.relab
+season.relab * 100 / total.tested.relab
+
+
+sam.sea <- otu_table(bl.phy)[,lombsea$asv] %>% rowSums()
+total.sea <- otu_table(bl.phy) %>% rowSums()
+
+relabs <- sam.sea / total.sea 
+
+mean(relabs)
+sd(relabs)
+
+therel <-  data.frame(this  = relabs, 
+           sample_data(bl.phy))
+
+therel %>% 
+  ggplot( aes(this)) + 
+  geom_histogram()
+
+
+ggplot(therel, 
+       aes(month, this)) + 
+  geom_jitter(alpha = 0.7)
+      
+```
+
+## Contrib for each behav
+
+```{r}
+
+sum(taxa_sums(bl.phy)[abprevsea %>% filter(behavior == 'Broad') %>% pull(asv)]) * 100 / total.relab
+sum(taxa_sums(bl.phy)[abprevsea %>% filter(behavior == 'Narrow') %>% pull(asv)]) * 100 / total.relab
+sum(taxa_sums(bl.phy)[abprevsea %>% filter(behavior %in% c('Other', 'CRT')) %>% pull(asv)]) * 100 / total.relab
+ 
+```
+
+# Taking the genus as a unit, which one presents a higher seasonality? 
+
+```{r}
+lombsea %>% 
+  left_join(tax, by = 'asv') %>% 
+  group_by(genus) %>% 
+  filter(n() >=3) %>%
+  summarize(count = n(),
+            mean.peak = mean(peak)) %>% 
+  arrange(-mean.peak) 
+
+
+lombsea %>% 
+  left_join(tax, by = 'asv') %>% 
+  arrange(-peak)
+
+```
+
+Some of the ASVs present a peak of 42. 
+This is surprising, let's see how is the distribution 
+
+
+```{r}
+plot_monthts(bl.phy.filt, asvs = 'asv122')
+plot_monthts(bl.phy.filt, asvs = 'asv55')
+plot_monthts(bl.phy.filt, asvs = 'asv25')
+plot_monthts(bl.phy.filt, asvs = 'asv29')
+plot_monthts(bl.phy.filt, asvs = 'asv39')
+```
+
+

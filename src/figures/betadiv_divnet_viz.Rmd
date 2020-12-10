@@ -1,0 +1,133 @@
+---
+title: "Beta diversity"
+author: "Adrià Auladell"
+date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
+knit: (function(inputFile, encoding) { 
+      out_dir <- 'results/tests/';
+      rmarkdown::render(inputFile,
+                        encoding=encoding, 
+                        output_file=file.path(here::here(),
+                        out_dir, 'beta_diversity.html')) })
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+---
+
+# Packages 
+```{r}
+library(tidyverse)
+library(speedyseq)
+library(DivNet)
+library(here)
+```
+
+# Sources 
+
+```{r}
+source(here('src/util/params-graphs.R'))
+
+figpath <- 'results/figures/betadiv'
+dir.create(file.path(here(figpath)), showWarnings = FALSE)
+```
+
+# Data import
+```{r}
+
+bl.phy <- readRDS(here('data/cleaned/blphyloseq.rds') )
+div.df.sea <- readRDS(here('data/analysis/divnet_genussea.rds'))
+div.df.mon <- readRDS(here('data/analysis/divnet_genusmon.rds'))
+
+```
+
+# Bray curtis viz 
+
+## Seasonality 
+```{r}
+simplifyBeta(div.df.sea, bl.phy, "bray-curtis", "season") %>%  
+  mutate_if(is.character, str_to_title) %>% 
+  filter(Covar1 != Covar2) %>% 
+  ggplot(aes(x = reorder(interaction(Covar1, Covar2, sep = ' - '), -beta_est), 
+             y = beta_est)) + 
+  geom_pointrange( aes(ymin = lower, ymax = upper),
+                  show.legend = F) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text = element_text(size = 13),
+        axis.title.y = element_text(size = 13)) +
+  xlab("") + ylab("Estimates of Bray-Curtis dissimilarity")
+
+
+ggsave(here(str_c(figpath, '/', 'season_test.pdf')), width = 9, height = 6)
+```
+
+## Month
+
+```{r, fig.width=11}
+month.corr <- month.abb
+names(month.corr) <- month.num
+
+simplifyBeta(div.df.mon, bl.phy, "bray-curtis", "month") %>%  
+  mutate(Covar1 = month.corr[Covar1],
+         Covar2 = month.corr[Covar2]) %>% 
+  ggplot(aes(x = reorder(interaction(Covar1, Covar2), -beta_est), 
+             y = beta_est)) + 
+  geom_pointrange( aes(ymin = lower, ymax = upper),
+                  show.legend = F, position = position_jitter(width = 0.1)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("") + ylab("Estimates of Bray-Curtis distance")
+
+ggsave(here(str_c(figpath, '/', 'month_test.pdf')), width = 11, height = 6)
+```
+
+# Testing 
+
+
+## Season 
+
+
+```{r}
+
+sb <- simplifyBeta(div.df.sea, bl.phy, "bray-curtis", "season")
+estimates <-  sb %>% pull(beta_est)
+ses <- sqrt(sb %>% pull(beta_var))
+
+DT::datatable(sb)
+
+betta(sb %>% pull(beta_est) %>% .[c(3,4)],
+      sb %>% pull(beta_var) %>% sqrt %>%  .[c(3,4)], 
+      cbind("intercept" = c(1,1), "winter" = c(0,1)))$table
+
+```
+
+
+## Month 
+
+```{r}
+sbmon <- simplifyBeta(div.df.mon, bl.phy, "bray-curtis", "month")
+estimates <-  sbmon %>% pull(beta_est)
+ses <- sqrt(sbmon %>% pull(beta_var))
+
+DT::datatable(sbmon)
+
+betta(sbmon %>% pull(beta_est) %>% .[c(56,40)],
+      sbmon %>% pull(beta_var) %>% sqrt %>%  .[c(56,40)], 
+      cbind("intercept" = c(1,1), "covar" = c(0,1)))$table
+
+```
+
+# Reprex 
+```{r}
+lee_phylum <- tax_glom(Lee, taxrank = 'Phylum')
+divnet_phylum_char <- lee_phylum %>%
+  divnet(X = "char", ncores = 4)
+
+sblee <- simplifyBeta(divnet_phylum_char,
+                   lee_phylum,
+                   "bray-curtis", "char") 
+
+# H0: BC(glassy-water) = BC(biofilm-water)
+betta(sblee %>% pull(beta_est) %>% head(2), 
+      sblee %>% pull(beta_var) %>% sqrt %>% head(2), 
+      cbind("intercept" = c(1,1), "water" = c(0,1)))$table
+
+```
