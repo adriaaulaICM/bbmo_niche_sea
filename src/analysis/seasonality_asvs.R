@@ -42,7 +42,7 @@ lomb.sea.02 <- tibble( asv = names(lomb.02),
                        int.min = map_dbl(interval, ~.[[2]]),
                        int.max = map_dbl(interval, ~.[[1]])) %>% 
   mutate( qval = fdrtool::fdrtool(pval, statistic = 'pvalue')$qval) %>% 
-  filter(qval <= 0.01, peak >= 10, int.max <= 2)
+  filter(qval <= 0.01, peak >= 0.154, int.max <= 2)
 
 
 write_rds(lomb.02, 'data/analysis/lomball.rds')
