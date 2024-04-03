@@ -1,5 +1,16 @@
 # Scripts for *Seasonal niche differentiation among closely related marine bacteria*
 
+
+
+
+🔴 IMPORTANT note❗ (3th of April 2024)🔴
+
+For the seasonality calculations, I used the `lomb` version 1.1. 
+As of today, there is the version 2.1, and the maximum peak at the yearly period is calculated differently. 
+I have changed the code accordingly from `peak >= 10` to `peak >= 0.154`. 
+
+---------------------------------------------------------------------------------------------------------------------
+
 Author: Adrià Auladell
 
 Inside `src` there are all the scripts with the following structure: 
